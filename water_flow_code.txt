@@ -1,0 +1,56 @@
+// Smart Hydroponic Greenhouse - YF-S401 water-flow monitor
+// Arduino Mega 2560: sensor signal -> digital pin 2
+// Experiment: 2485 pulses collected during 1.00 L in 43.27 s
+// Experimental factor: 2485 / (60 * 1.00) = 41.4167 Hz/(L/min)
+
+
+const byte FLOW_SENSOR_PIN = 2;
+const float CALIBRATION_FACTOR = 41.42f;  // experimental estimate
+const float MINIMUM_FLOW_LPM = 1.00f;     // provisional threshold; adjust for NFT channels
+const unsigned long SAMPLE_INTERVAL_MS = 1000UL;
+
+volatile unsigned long pulseCount = 0;
+unsigned long previousSampleMs = 0;
+
+void countFlowPulse() {
+  pulseCount++;
+}
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(FLOW_SENSOR_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(FLOW_SENSOR_PIN), countFlowPulse, FALLING);
+  previousSampleMs = millis();
+  Serial.println("YF-S401 Water Flow Monitoring Started");
+  Serial.println("Calibration: 41.42; low-flow threshold: 1.00 L/min (provisional)");
+}
+
+void loop() {
+  unsigned long now = millis();
+  unsigned long elapsedMs = now - previousSampleMs;
+  if (elapsedMs < SAMPLE_INTERVAL_MS) return;
+  previousSampleMs = now;
+
+  noInterrupts();
+  unsigned long pulses = pulseCount;
+  pulseCount = 0;
+  interrupts();
+
+  float frequencyHz = (pulses * 1000.0f) / elapsedMs;
+  float flowLpm = frequencyHz / CALIBRATION_FACTOR;
+
+  Serial.print("Pulses: ");
+  Serial.print(pulses);
+  Serial.print(" | Flow: ");
+  Serial.print(flowLpm, 2);
+  Serial.println(" L/min");
+
+  if (pulses == 0) {
+    Serial.println("WARNING: NO WATER FLOW DETECTED!");
+  } else if (flowLpm < MINIMUM_FLOW_LPM) {
+    Serial.println("WARNING: LOW WATER FLOW!");
+  } else {
+    Serial.println("Water flow is normal.");
+  }
+  Serial.println("--------------------------");
+}

@@ -1,0 +1,229 @@
+
+/*
+  Smart Hydroponic Greenhouse
+  Basil and Mint - Supplemental Lighting
+
+  Arduino Mega 2560
+
+  LDR AO  -> A0
+  Relay 1 -> D7
+  Relay 2 -> D8
+
+  LOW LDR value = BRIGHT
+  HIGH LDR value = DARK
+*/
+
+const int LDR_PIN = A0;
+
+const int LED1_RELAY_PIN = 7;
+const int LED2_RELAY_PIN = 8;
+
+// Most relay modules are active LOW.
+// Change to false if yours is active HIGH.
+const bool RELAY_ACTIVE_LOW = true;
+
+// LDR thresholds
+const int BRIGHT_THRESHOLD = 200;
+const int DARK_THRESHOLD = 350;
+
+// Lighting schedule
+const unsigned long LIGHT_DURATION =
+    14UL * 60UL * 60UL * 1000UL;
+
+const unsigned long DARK_DURATION =
+    10UL * 60UL * 60UL * 1000UL;
+
+const unsigned long DAY_DURATION =
+    LIGHT_DURATION + DARK_DURATION;
+
+// Sensor sampling interval
+const unsigned long READ_INTERVAL = 1000UL;
+
+// Light level must remain stable for 5 seconds
+const unsigned long STABILITY_TIME = 5000UL;
+
+unsigned long scheduleStart = 0;
+unsigned long lastReadTime = 0;
+unsigned long changeStartTime = 0;
+
+// 0 = Both LED strips OFF
+// 1 = LED Strip 1 ON
+// 2 = Both LED strips ON
+int currentMode = 0;
+int pendingMode = 0;
+
+bool initialized = false;
+
+// Function to control relay outputs
+void setRelay(int pin, bool turnOn) {
+
+  if (RELAY_ACTIVE_LOW) {
+    digitalWrite(pin, turnOn ? LOW : HIGH);
+  } else {
+    digitalWrite(pin, turnOn ? HIGH : LOW);
+  }
+}
+
+// Function to control both LED strips
+void setLightingMode(int mode) {
+
+  currentMode = mode;
+
+  if (mode == 0) {
+    setRelay(LED1_RELAY_PIN, false);
+    setRelay(LED2_RELAY_PIN, false);
+  }
+  else if (mode == 1) {
+    setRelay(LED1_RELAY_PIN, true);
+    setRelay(LED2_RELAY_PIN, false);
+  }
+  else if (mode == 2) {
+    setRelay(LED1_RELAY_PIN, true);
+    setRelay(LED2_RELAY_PIN, true);
+  }
+}
+
+// Determine required lighting based on LDR
+int getRequiredMode(int ldrValue) {
+
+  if (ldrValue > DARK_THRESHOLD) {
+    return 2;  // DARK: both LED strips ON
+  }
+  else if (ldrValue > BRIGHT_THRESHOLD) {
+    return 1;  // MODERATE: one LED strip ON
+  }
+  else {
+    return 0;  // BRIGHT: both LED strips OFF
+  }
+}
+
+void setup() {
+
+  Serial.begin(9600);
+
+  pinMode(LDR_PIN, INPUT);
+
+  // Set both relays OFF before enabling outputs
+  digitalWrite(
+    LED1_RELAY_PIN,
+    RELAY_ACTIVE_LOW ? HIGH : LOW
+  );
+
+  digitalWrite(
+    LED2_RELAY_PIN,
+    RELAY_ACTIVE_LOW ? HIGH : LOW
+  );
+
+  pinMode(LED1_RELAY_PIN, OUTPUT);
+  pinMode(LED2_RELAY_PIN, OUTPUT);
+
+  setLightingMode(0);
+
+  scheduleStart = millis();
+
+  Serial.println("============================");
+  Serial.println("SMART GREENHOUSE LIGHTING");
+  Serial.println("Plants: Basil and Mint");
+  Serial.println("Lighting window: 14 hours");
+  Serial.println("LED OFF period: 10 hours");
+  Serial.println("============================");
+}
+
+void loop() {
+
+  unsigned long now = millis();
+
+  // Time elapsed within the 24-hour cycle
+  unsigned long elapsed = now - scheduleStart;
+
+  unsigned long timeInDay =
+      elapsed % DAY_DURATION;
+
+  bool lightingWindow =
+      (timeInDay < LIGHT_DURATION);
+
+  // During the 10-hour period, force LEDs OFF
+  if (!lightingWindow) {
+
+    if (currentMode != 0) {
+      setLightingMode(0);
+      Serial.println(
+        "REST PERIOD: Both LED strips OFF"
+      );
+    }
+
+    initialized = false;
+    pendingMode = 0;
+  }
+
+  // Read LDR once per second
+  if (now - lastReadTime >= READ_INTERVAL) {
+
+    lastReadTime = now;
+
+    int ldrValue = analogRead(LDR_PIN);
+
+    int requiredMode = getRequiredMode(ldrValue);
+
+    // Apply smart lighting only in 14-hour window
+    if (lightingWindow) {
+
+      // First reading: initialize immediately
+      if (!initialized) {
+
+        setLightingMode(requiredMode);
+
+        pendingMode = requiredMode;
+
+        changeStartTime = now;
+
+        initialized = true;
+      }
+      else {
+
+        // Detect a change in required lighting
+        if (requiredMode != pendingMode) {
+
+          pendingMode = requiredMode;
+          changeStartTime = now;
+        }
+
+        // Apply change only when stable
+        if (pendingMode != currentMode &&
+            now - changeStartTime >= STABILITY_TIME) {
+
+          setLightingMode(pendingMode);
+        }
+      }
+    }
+
+    // Serial Monitor output
+    Serial.print("LDR Value: ");
+    Serial.print(ldrValue);
+
+    Serial.print(" | Light Condition: ");
+
+    if (requiredMode == 0) {
+      Serial.print("BRIGHT");
+    }
+    else if (requiredMode == 1) {
+      Serial.print("MODERATE");
+    }
+    else {
+      Serial.print("DARK");
+    }
+
+    Serial.print(" | LED1: ");
+    Serial.print(currentMode >= 1 ? "ON" : "OFF");
+
+    Serial.print(" | LED2: ");
+    Serial.print(currentMode == 2 ? "ON" : "OFF");
+
+    Serial.print(" | Period: ");
+    Serial.print(
+      lightingWindow ? "LIGHT WINDOW" : "REST"
+    );
+
+    Serial.println();
+  }
+}

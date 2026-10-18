@@ -1,0 +1,84 @@
+
+#include <DHT.h>
+
+// Pin configuration
+#define DHTPIN 2
+#define DHTTYPE DHT22
+#define RELAY_PIN 3
+
+DHT dht(DHTPIN, DHTTYPE);
+
+// Temperature thresholds (Celsius)
+const float TEMP_ON = 28.0;
+const float TEMP_OFF = 26.0;
+
+// Humidity thresholds (%)
+const float HUM_ON = 75.0;
+const float HUM_OFF = 70.0;
+
+// Most relay modules are active LOW
+const int RELAY_ON = LOW;
+const int RELAY_OFF = HIGH;
+
+bool fanOn = false;
+
+void setFan(bool state) {
+  fanOn = state;
+  digitalWrite(RELAY_PIN,
+               fanOn ? RELAY_ON : RELAY_OFF);
+}
+
+void setup() {
+  // Set relay OFF before enabling output
+  digitalWrite(RELAY_PIN, RELAY_OFF);
+  pinMode(RELAY_PIN, OUTPUT);
+
+  Serial.begin(9600);
+  dht.begin();
+
+  Serial.println("DHT22 Fan Control System");
+  Serial.println("------------------------");
+}
+
+void loop() {
+
+  float humidity = dht.readHumidity();
+  float temperature = dht.readTemperature();
+
+  // Check for sensor errors
+  if (isnan(humidity) || isnan(temperature)) {
+    Serial.println("ERROR: DHT22 reading failed!");
+    setFan(true);  // Safety: fan ON
+    delay(2000);
+    return;
+  }
+
+  // Turn ON if either measurement is too high
+  if (temperature >= TEMP_ON ||
+      humidity >= HUM_ON) {
+
+    setFan(true);
+  }
+
+  // Turn OFF only when BOTH are sufficiently low
+  else if (temperature <= TEMP_OFF &&
+           humidity <= HUM_OFF) {
+
+    setFan(false);
+  }
+
+  // Otherwise, keep the previous fan state
+
+  Serial.print("Temperature: ");
+  Serial.print(temperature, 1);
+  Serial.print(" C | ");
+
+  Serial.print("Humidity: ");
+  Serial.print(humidity, 1);
+  Serial.print(" % | ");
+
+  Serial.print("Fan: ");
+  Serial.println(fanOn ? "ON" : "OFF");
+
+  delay(2000);
+}

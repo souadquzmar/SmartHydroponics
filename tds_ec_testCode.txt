@@ -1,0 +1,106 @@
+
+#define TDS_PIN A0
+
+#define VREF 5.0
+#define ADC_RESOLUTION 1024.0
+
+// Water temperature in Celsius
+float temperature = 25.0;
+
+// TDS conversion factor (500 scale)
+float tdsFactor = 0.5;
+
+// EC thresholds for basil and mint
+#define EC_LOW_CRITICAL 1.1
+#define EC_LOW 1.2
+#define EC_HIGH 1.5
+#define EC_HIGH_CRITICAL 1.6
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(TDS_PIN, INPUT);
+
+  Serial.println("TDS and EC Monitoring System");
+  Serial.println("Hydroponics: Basil and Mint");
+}
+
+void loop() {
+
+  // Read analog sensor
+  int analogValue = analogRead(TDS_PIN);
+
+  // Convert ADC value to voltage
+  float voltage = analogValue * VREF / ADC_RESOLUTION;
+
+  // Temperature compensation to 25 C
+  float compensationCoefficient =
+      1.0 + 0.02 * (temperature - 25.0);
+
+  float compensatedVoltage =
+      voltage / compensationCoefficient;
+
+  // Calculate TDS in ppm
+  float tdsValue =
+      (133.42 * pow(compensatedVoltage, 3)
+      - 255.86 * pow(compensatedVoltage, 2)
+      + 857.39 * compensatedVoltage)
+      * 0.5;
+
+  // Calculate estimated EC in mS/cm
+  float ecValue =
+      tdsValue / (tdsFactor * 1000.0);
+
+  // Print sensor values
+  Serial.println("-----------------------------");
+
+  Serial.print("Analog: ");
+  Serial.println(analogValue);
+
+  Serial.print("Voltage: ");
+  Serial.print(voltage, 3);
+  Serial.println(" V");
+
+  Serial.print("TDS: ");
+  Serial.print(tdsValue, 1);
+  Serial.println(" ppm");
+
+  Serial.print("EC: ");
+  Serial.print(ecValue, 3);
+  Serial.println(" mS/cm");
+
+  // EC and TDS conditions
+  if (ecValue < EC_LOW_CRITICAL) {
+
+    Serial.println("STATUS: CRITICALLY LOW");
+    Serial.println("ACTION: Add nutrients A and B");
+
+  }
+  else if (ecValue < EC_LOW) {
+
+    Serial.println("STATUS: LOW");
+    Serial.println("ACTION: Monitor EC / nutrients may be needed");
+
+  }
+  else if (ecValue <= EC_HIGH) {
+
+    Serial.println("STATUS: OPTIMAL");
+    Serial.println("ACTION: No adjustment needed");
+
+  }
+  else if (ecValue <= EC_HIGH_CRITICAL) {
+
+    Serial.println("STATUS: HIGH");
+    Serial.println("ACTION: Stop nutrient dosing");
+
+  }
+  else {
+
+    Serial.println("STATUS: CRITICALLY HIGH");
+    Serial.println("ACTION: Stop nutrients / check dilution");
+
+  }
+
+  Serial.println("-----------------------------");
+
+  delay(1000);
+}

@@ -1,6 +1,6 @@
 
 const byte FLOW_SENSOR_PIN = 2;
-const byte PUMP_RELAY_PIN = 3;
+const byte PUMP_RELAY_PIN = 22;
 
 const float CALIBRATION_FACTOR = 41.42f;
 const float MINIMUM_FLOW_LPM = 1.00f;

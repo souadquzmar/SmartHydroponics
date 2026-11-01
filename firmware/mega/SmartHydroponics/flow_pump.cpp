@@ -2,8 +2,8 @@
 #include <Arduino.h>
 #include "flow_pump.h"
 
-const byte FLOW_SENSOR_PIN = 2;
-const byte PUMP_RELAY_PIN = 22;
+const byte FLOW_SENSOR_PIN = 4;
+const byte PUMP_RELAY_PIN = 5;
 
 const float CALIBRATION_FACTOR = 41.42f;
 const float MINIMUM_FLOW_LPM = 1.00f;

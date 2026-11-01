@@ -1,13 +1,15 @@
 #include "ds18b20.h"
+#include <math.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
-const byte DS18B20_PIN = 2;
+const byte DS18B20_PIN = 5;
 
 OneWire oneWire(DS18B20_PIN);
 DallasTemperature ds18b20(&oneWire);
 
 unsigned long lastTempRead = 0;
+static float waterTemperatureC = NAN;
 const unsigned long TEMP_INTERVAL = 1000;
 
 void initDS18B20() {
@@ -31,11 +33,18 @@ void updateDS18B20() {
   float temperature = ds18b20.getTempCByIndex(0);
 
   if (temperature == DEVICE_DISCONNECTED_C) {
+    waterTemperatureC = NAN;
     Serial.println("DS18B20 error: sensor disconnected!");
     return;
   }
 
+  if (temperature < -55.0f || temperature > 125.0f || temperature == 85.0f) {
+    waterTemperatureC = NAN;
+    return;
+  }
+  waterTemperatureC = temperature;
   Serial.print("Nutrient solution temperature: ");
   Serial.print(temperature, 2);
   Serial.println(" °C");
 }
+float getWaterTemperatureC() { return waterTemperatureC; }

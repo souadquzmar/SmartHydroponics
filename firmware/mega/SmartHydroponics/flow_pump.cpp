@@ -3,14 +3,14 @@
 #include "flow_pump.h"
 
 const byte FLOW_SENSOR_PIN = 2;
-const byte PUMP_RELAY_PIN = 6;
+const byte PUMP_RELAY_PIN = 5;
 
 const float CALIBRATION_FACTOR = 41.42f;
 const float MINIMUM_FLOW_LPM = 1.00f;
 
 const unsigned long SAMPLE_INTERVAL_MS = 1000UL;
-const unsigned long STARTUP_GRACE_MS = 5000UL;
-const unsigned long RESTART_DELAY_MS = 5000UL;
+const unsigned long STARTUP_GRACE_MS = 60000UL;
+const unsigned long RESTART_DELAY_MS = 60000UL;
 
 const byte RELAY_ON = LOW;
 const byte RELAY_OFF = HIGH;

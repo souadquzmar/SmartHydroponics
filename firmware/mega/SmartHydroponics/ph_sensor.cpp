@@ -3,7 +3,7 @@
 #include <math.h>
 #include "ph_sensor.h"
 
-static const uint8_t PH_PIN = A1;
+static const uint8_t PH_PIN = A0;
 static const float ADC_REFERENCE_V = 5.0f;
 
 static const unsigned long INTERVAL_MS = 1000UL;

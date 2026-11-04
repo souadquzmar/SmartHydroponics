@@ -5,7 +5,7 @@
 
 // Assumes a DFRobot-style analog TDS module, 0-2.3V output.
 // Calibration is REQUIRED for accurate EC/TDS.
-static const uint8_t TDS_PIN = A0;
+static const uint8_t TDS_PIN = A1;
 static const float ADC_REFERENCE_V = 5.0f; // Measure actual Mega AREF/5V
 static const float EC_CALIBRATION = 1.0f; // Adjust using standard solution
 static const unsigned long INTERVAL_MS = 1000UL;

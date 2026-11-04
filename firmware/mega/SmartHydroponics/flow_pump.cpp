@@ -6,7 +6,7 @@ const byte FLOW_SENSOR_PIN = 2;
 const byte PUMP_RELAY_PIN = 5;
 
 const float CALIBRATION_FACTOR = 41.42f;
-const float MINIMUM_FLOW_LPM = 1.00f;
+const float MINIMUM_FLOW_LPM = 0.50f;
 
 const unsigned long SAMPLE_INTERVAL_MS = 1000UL;
 const unsigned long STARTUP_GRACE_MS = 60000UL;
@@ -52,7 +52,7 @@ void stopPump(const char* reason) {
 
   Serial.print("Pump OFF: ");
   Serial.println(reason);
-  Serial.println("Retrying in 5 seconds.");
+  Serial.println("Retrying in 60 seconds.");
 }
 
 void initFlowPump() {
@@ -114,7 +114,7 @@ void updateFlowPump() {
     stopPump(
       pulses == 0
         ? "No water flow detected"
-        : "Water flow below 1.00 L/min"
+        : "Water flow below 0.5 L/min"
     );
   } else {
     Serial.println("Flow normal - pump continues running.");

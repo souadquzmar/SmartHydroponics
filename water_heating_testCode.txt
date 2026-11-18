@@ -1,0 +1,41 @@
+
+#include <Arduino.h>
+#include <math.h>
+
+#include "ds18b20.h"
+#include "water_heater.h"
+
+void setup() {
+  Serial.begin(9600);
+
+  initWaterHeater();  // Initialize relay OFF
+  initDS18B20();      // Initialize temperature sensor
+
+  Serial.println("Water Heater Test Started");
+}
+
+void loop() {
+  // Read water temperature
+  updateDS18B20();
+
+  // Control heater based on temperature
+  updateWaterHeater();
+
+  // Print status every second
+  static unsigned long lastPrint = 0;
+
+  if (millis() - lastPrint >= 1000) {
+    lastPrint = millis();
+
+    float temp = getWaterTemperatureC();
+
+    if (isnan(temp)) {
+      Serial.println("Temperature sensor error - Heater OFF");
+    } else {
+      Serial.print("Water Temperature: ");
+      Serial.print(temp, 2);
+      Serial.print(" C | Heater: ");
+      Serial.println(isWaterHeaterOn() ? "ON" : "OFF");
+    }
+  }
+}

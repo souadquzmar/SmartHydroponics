@@ -43,7 +43,7 @@ void updateDS18B20() {
     return;
   }
   waterTemperatureC = temperature;
-  Serial.print("Nutrient solution temperature: ");
+  Serial.print("water temperature: ");
   Serial.print(temperature, 2);
   Serial.println(" °C");
 }

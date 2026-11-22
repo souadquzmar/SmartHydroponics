@@ -6,7 +6,7 @@
 
 const uint8_t HEATER_RELAY_PIN = 7;
 const bool HEATER_RELAY_ACTIVE_LOW = true;
-const float HEATER_TARGET_C = 24.0f;
+const float HEATER_TARGET_C = 21.0f;
 
 const unsigned long HEATER_ON_MS = 120000UL;
 const unsigned long HEATER_OFF_MS = 30000UL;

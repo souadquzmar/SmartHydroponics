@@ -6,6 +6,7 @@
 void initLighting();
 void updateLighting();
 int getLDRValue();
+const char* getLightingCategory();
 uint8_t getLEDBrightness();
 bool isLightingPhase();
 unsigned long getLightingPhaseRemainingSeconds();

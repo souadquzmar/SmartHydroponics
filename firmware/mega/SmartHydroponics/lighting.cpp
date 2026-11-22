@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include "lighting.h"
 
-// A0 is used by the TDS/EC module, so the LDR uses A2.
+// pH uses A0, TDS/EC uses A1, and LDR uses A2.
 static const uint8_t LDR_PIN = A2;
 static const uint8_t LED_PIN = 10; // TIP120 base through 1k resistor
 
@@ -102,4 +102,14 @@ unsigned long getLightingPhaseRemainingSeconds() {
   unsigned long duration = lightPhase ? LIGHT_DURATION_MS : REST_DURATION_MS;
   unsigned long elapsed = millis() - phaseStartMs;
   return (elapsed >= duration) ? 0 : (duration - elapsed) / 1000UL;
+}
+
+// Uses exactly the same LDR thresholds and state as updateLighting().
+const char* getLightingCategory() {
+  if (ldrValue < 0) return "UNKNOWN";
+  if (!lightPhase) return "REST";
+  int normalized = HIGH_VALUE_IS_DARK ? ldrValue : 1023 - ldrValue;
+  if (normalized < BRIGHT_THRESHOLD) return "BRIGHT";
+  if (normalized < DARK_THRESHOLD) return "MODERATE";
+  return "DARK";
 }

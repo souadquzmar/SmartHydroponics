@@ -130,3 +130,14 @@ float getFlowRateLPM() {
 bool isPumpRunning() {
   return pumpRunning;
 }
+
+// Dosing must not start during the circulation pump's startup grace period.
+// This deliberately uses the SAME 0.50 L/min minimum as pump protection.
+bool isFlowConfirmedForDosing() {
+  const unsigned long now = millis();
+  return pumpRunning &&
+         (now - pumpStartMs >= STARTUP_GRACE_MS) &&
+         (now - previousSampleMs <= 2500UL) &&
+         isfinite(flowRateLPM) &&
+         (flowRateLPM >= MINIMUM_FLOW_LPM);
+}

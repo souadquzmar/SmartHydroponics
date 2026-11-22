@@ -13,7 +13,7 @@ static float phValue = NAN;
 
 void initPHSensor() {
   pinMode(PH_PIN, INPUT);
-  Serial.println("pH initialized (A1)");
+  Serial.println("pH initialized (A0)");
 }
 
 void updatePHSensor() {

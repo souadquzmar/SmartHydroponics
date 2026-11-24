@@ -1,153 +1,423 @@
+
 #include <Arduino.h>
+#include <WiFi.h>
+#include <PubSubClient.h>
 #include <string.h>
+
+#include "config.h"
+
+// =====================================================
+// UART CONFIGURATION
+// =====================================================
 
 #define RXD2 16
 #define TXD2 17
 
-// Reads existing Mega DATA/ALERT/INFO messages, plus new dosing events.
 constexpr size_t BUFFER_SIZE = 200;
+
 char rxBuffer[BUFFER_SIZE];
 size_t rxIndex = 0;
 bool discardingLine = false;
 
-// Messages produced by the companion Mega sketch:
-// INFO,DOSER,DISABLED
-// INFO,DOSER,WAIT_FLOW
-// INFO,DOSER,FLOW_OK
-// ALERT,DOSER,FLOW_LOST
-// INFO,DOSER,PHASE,TDS|PH
-// INFO,DOSER,PUMP_ON,NUTRIENT|PH_UP|PH_DOWN,150
-// INFO,DOSER,PUMP_OFF,NUTRIENT|PH_UP|PH_DOWN
-// INFO,DOSER,MIXING,60
-// INFO,DOSER,MONITORING
-// ALERT,DOSER,LOCKOUT,FLOW_UNSAFE|BAD_SENSOR|TDS_HIGH|DOSE_LIMIT
-// INFO,DOSER,RESET
+// =====================================================
+// MQTT CONFIGURATION
+// =====================================================
 
-const char* humanPump(const char* code) {
-  if (strcmp(code, "NUTRIENT") == 0) return "Nutrient dosing";
-  if (strcmp(code, "PH_UP") == 0) return "pH UP dosing";
-  if (strcmp(code, "PH_DOWN") == 0) return "pH DOWN dosing";
-  return "Unknown pump";
-}
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
+
+unsigned long lastWiFiAttempt = 0;
+unsigned long lastMQTTAttempt = 0;
+
+bool previousWiFiState = false;
+
+unsigned long mqttPublishedCount = 0;
+unsigned long mqttDroppedCount = 0;
+
+// =====================================================
+// DOSING MESSAGE DISPLAY
+// =====================================================
 
 void displayDosingMessage(const char* message) {
-  // Parse a copy: the incoming line is preserved for log/debug printing.
-  char temp[BUFFER_SIZE];
-  strncpy(temp, message, sizeof(temp) - 1);
-  temp[sizeof(temp) - 1] = '\0';
 
-  char* fields[6] = {nullptr};
-  size_t count = 0;
-  char* p = temp;
-  while (count < 6) {
-    fields[count++] = p;
-    char* comma = strchr(p, ',');
-    if (!comma) break;
-    *comma = '\0';
-    p = comma + 1;
+  if (strstr(message, "DOSER,DISABLED")) {
+    Serial.println("[DOSING] Automatic dosing disabled");
   }
 
-  if (count < 3) { Serial.println(message); return; }
-  const char* event = fields[2];
-  const char* arg = count > 3 ? fields[3] : "";
-  const char* extra = count > 4 ? fields[4] : "";
+  else if (strstr(message, "DOSER,WAIT_FLOW")) {
+    Serial.println("[DOSING] Waiting for circulation flow...");
+  }
 
-  Serial.println();
-  Serial.println(F("===== DOSING STATUS ====="));
+  else if (strstr(message, "DOSER,FLOW_OK")) {
+    Serial.println("[DOSING] Circulation flow confirmed");
+  }
 
-  if (strcmp(event, "DISABLED") == 0) {
-    Serial.println(F("Automatic dosing DISABLED: commissioning required."));
-  } else if (strcmp(event, "WAIT_FLOW") == 0) {
-    Serial.println(F("Waiting for confirmed circulation flow; dosing OFF."));
-  } else if (strcmp(event, "FLOW_OK") == 0) {
-    Serial.println(F("Flow confirmed (Mega threshold >= 0.50 L/min)."));
-  } else if (strcmp(event, "FLOW_LOST") == 0) {
-    Serial.println(F("WARNING: circulation flow no longer confirmed."));
-  } else if (strcmp(event, "PHASE") == 0) {
-    if (strcmp(arg, "TDS") == 0)
-      Serial.println(F("Correction priority: TDS (target 900-1000 ppm)."));
-    else if (strcmp(arg, "PH") == 0)
-      Serial.println(F("TDS accepted; now checking pH (target 5.8-6.0)."));
-    else Serial.println(message);
-  } else if (strcmp(event, "PUMP_ON") == 0) {
-    Serial.print(humanPump(arg));
-    Serial.print(F(" pump ON, requested pulse "));
-    Serial.print(*extra ? extra : "?");
-    Serial.println(F(" ms."));
-  } else if (strcmp(event, "PUMP_OFF") == 0) {
-    Serial.print(humanPump(arg));
-    Serial.println(F(" pump OFF."));
-  } else if (strcmp(event, "MIXING") == 0) {
-    Serial.print(F("Mixing interval started: "));
-    Serial.print(*arg ? arg : "?");
-    Serial.println(F(" seconds; dosing pumps OFF."));
-  } else if (strcmp(event, "MONITORING") == 0) {
-    Serial.println(F("Initial mixing complete: evaluating sensor readings."));
-  } else if (strcmp(event, "RESET") == 0) {
-    Serial.println(F("Mega received manual doser reset command."));
-  } else if (strcmp(event, "LOCKOUT") == 0) {
-    Serial.print(F("DOSING LOCKED OUT: "));
-    if (strcmp(arg, "FLOW_UNSAFE") == 0)
-      Serial.println(F("insufficient or unconfirmed circulation flow."));
-    else if (strcmp(arg, "BAD_SENSOR") == 0)
-      Serial.println(F("invalid pH or TDS measurement."));
-    else if (strcmp(arg, "TDS_HIGH") == 0)
-      Serial.println(F("TDS above 1000 ppm: stop adding nutrients."));
-    else if (strcmp(arg, "DOSE_LIMIT") == 0)
-      Serial.println(F("maximum correction pulses reached."));
-    else Serial.println(arg);
-    Serial.println(F("All dosing OFF. Inspect the system before manual reset."));
-  } else {
+  else if (strstr(message, "DOSER,FLOW_LOST")) {
+    Serial.println("[DOSING ALERT] Circulation flow lost!");
+  }
+
+  else if (strstr(message, "DOSER,PHASE,TDS")) {
+    Serial.println("[DOSING] Starting TDS adjustment phase");
+  }
+
+  else if (strstr(message, "DOSER,PHASE,PH")) {
+    Serial.println("[DOSING] Starting pH adjustment phase");
+  }
+
+  else if (strstr(message, "DOSER,PUMP_ON,NUTRIENT")) {
+    Serial.println("[DOSING] Nutrient pump ON");
+  }
+
+  else if (strstr(message, "DOSER,PUMP_ON,PH_UP")) {
+    Serial.println("[DOSING] pH+ pump ON");
+  }
+
+  else if (strstr(message, "DOSER,PUMP_ON,PH_DOWN")) {
+    Serial.println("[DOSING] pH- pump ON");
+  }
+
+  else if (strstr(message, "DOSER,PUMP_OFF")) {
+    Serial.println("[DOSING] Dosing pump OFF");
+  }
+
+  else if (strstr(message, "DOSER,MIXING")) {
+    Serial.println("[DOSING] Mixing solution...");
+  }
+
+  else if (strstr(message, "DOSER,MONITORING")) {
+    Serial.println("[DOSING] Monitoring water parameters");
+  }
+
+  else if (strstr(message, "DOSER,LOCKOUT")) {
+    Serial.println("[DOSING ALERT] Safety lockout activated!");
+  }
+
+  else if (strstr(message, "DOSER,RESET")) {
+    Serial.println("[DOSING] System reset");
+  }
+
+  else {
+    Serial.print("[DOSING] ");
     Serial.println(message);
   }
-  Serial.println(F("========================="));
 }
+
+// =====================================================
+// WIFI
+// =====================================================
+
+void startWiFiConnection() {
+
+  Serial.println("\n[WiFi] Connecting to university network...");
+
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.setAutoReconnect(true);
+
+  WiFi.begin(
+    WIFI_SSID,
+    WPA2_AUTH_PEAP,
+    WIFI_IDENTITY,
+    WIFI_USERNAME,
+    WIFI_PASSWORD
+  );
+
+  lastWiFiAttempt = millis();
+}
+
+void updateWiFi() {
+
+  bool connected = (WiFi.status() == WL_CONNECTED);
+
+  if (connected && !previousWiFiState) {
+
+    Serial.println("\n[WiFi] Connected!");
+    Serial.print("[WiFi] IP: ");
+    Serial.println(WiFi.localIP());
+
+    Serial.print("[WiFi] Signal: ");
+    Serial.print(WiFi.RSSI());
+    Serial.println(" dBm");
+  }
+
+  if (!connected && previousWiFiState) {
+    Serial.println("[WiFi] Connection lost!");
+  }
+
+  previousWiFiState = connected;
+
+  if (!connected &&
+      millis() - lastWiFiAttempt >= WIFI_RETRY_INTERVAL) {
+
+    Serial.println("[WiFi] Retrying connection...");
+
+    WiFi.disconnect();
+    startWiFiConnection();
+  }
+}
+
+// =====================================================
+// MQTT
+// =====================================================
+
+bool connectMQTT() {
+
+  if (WiFi.status() != WL_CONNECTED) {
+    return false;
+  }
+
+  Serial.println("[MQTT] Connecting to broker...");
+
+  bool connected = mqttClient.connect(
+    "HydroponicESP32",
+    MQTT_USERNAME,
+    MQTT_PASSWORD,
+    TOPIC_STATUS,
+    1,
+    true,
+    "OFFLINE"
+  );
+
+  if (connected) {
+
+    Serial.println("[MQTT] Connected!");
+
+    mqttClient.publish(
+      TOPIC_STATUS,
+      "ONLINE",
+      true
+    );
+
+    return true;
+  }
+
+  Serial.print("[MQTT] Connection failed. State: ");
+  Serial.println(mqttClient.state());
+
+  return false;
+}
+
+void updateMQTT() {
+
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
+  if (!mqttClient.connected()) {
+
+    if (millis() - lastMQTTAttempt >= MQTT_RETRY_INTERVAL) {
+
+      lastMQTTAttempt = millis();
+      connectMQTT();
+    }
+  }
+  else {
+    mqttClient.loop();
+  }
+}
+
+// =====================================================
+// FORWARD MEGA MESSAGES TO MQTT
+// =====================================================
+
+void publishMegaMessage(const char* message) {
+
+  if (!mqttClient.connected()) {
+    mqttDroppedCount++;
+    return;
+  }
+
+  const char* topic = nullptr;
+
+  if (strncmp(message, "DATA,", 5) == 0) {
+    topic = TOPIC_TELEMETRY;
+  }
+
+  else if (strncmp(message, "ALERT,", 6) == 0) {
+    topic = TOPIC_ALERTS;
+  }
+
+  else if (strncmp(message, "INFO,", 5) == 0) {
+    topic = TOPIC_EVENTS;
+  }
+
+  if (topic == nullptr) {
+    return;
+  }
+
+  if (mqttClient.publish(topic, message)) {
+    mqttPublishedCount++;
+  }
+  else {
+    mqttDroppedCount++;
+    Serial.println("[MQTT] Message publish failed!");
+  }
+}
+
+// =====================================================
+// PROCESS MEGA MESSAGES
+// =====================================================
 
 void processMessage(const char* message) {
-  // Dosing messages are a subset of the existing INFO/ALERT protocol.
-  if (strncmp(message, "INFO,DOSER,", 11) == 0 ||
-      strncmp(message, "ALERT,DOSER,", 12) == 0) {
+
+  // Forward the original message to MQTT.
+  publishMegaMessage(message);
+
+  // Preserve local Serial Monitor display.
+  if (strncmp(message, "DATA,", 5) == 0) {
+
+    Serial.println("\n[MEGA TELEMETRY]");
+    Serial.println(message);
+  }
+
+  else if (
+    strncmp(message, "INFO,DOSER,", 11) == 0 ||
+    strncmp(message, "ALERT,DOSER,", 12) == 0
+  ) {
+
     displayDosingMessage(message);
-  } else if (strncmp(message, "DATA,", 5) == 0) {
-    Serial.println(F("----- SENSOR DATA -----"));
+  }
+
+  else if (strncmp(message, "ALERT,", 6) == 0) {
+
+    Serial.print("[MEGA ALERT] ");
     Serial.println(message);
-  } else if (strncmp(message, "ALERT,", 6) == 0) {
-    Serial.println(F("!!!!! ALERT !!!!!"));
+  }
+
+  else if (strncmp(message, "INFO,", 5) == 0) {
+
+    Serial.print("[MEGA INFO] ");
     Serial.println(message);
-  } else if (strncmp(message, "INFO,", 5) == 0) {
-    Serial.println(F("----- INFO -----"));
-    Serial.println(message);
-  } else {
-    Serial.print(F("Unknown message: "));
+  }
+
+  else {
+
+    Serial.print("[MEGA] ");
     Serial.println(message);
   }
 }
 
-void setup() {
-  Serial.begin(115200);
-  Serial2.begin(9600, SERIAL_8N1, RXD2, TXD2);
-  Serial.println(F("ESP32 Hydroponics Ready"));
-}
+// =====================================================
+// UART RECEPTION
+// =====================================================
 
-void loop() {
-  while (Serial2.available() > 0) {
-    const char c = (char)Serial2.read();
-    if (c == '\n') {
-      if (!discardingLine) {
+void readMegaUART() {
+
+  while (Serial2.available()) {
+
+    char incoming = Serial2.read();
+
+    if (incoming == '\r') {
+      continue;
+    }
+
+    if (incoming == '\n') {
+
+      if (!discardingLine && rxIndex > 0) {
+
         rxBuffer[rxIndex] = '\0';
-        if (rxIndex > 0 && rxBuffer[rxIndex - 1] == '\r')
-          rxBuffer[rxIndex - 1] = '\0';
-        if (rxBuffer[0] != '\0') processMessage(rxBuffer);
+        processMessage(rxBuffer);
       }
+
       rxIndex = 0;
       discardingLine = false;
-    } else if (!discardingLine) {
-      if (rxIndex < BUFFER_SIZE - 1) rxBuffer[rxIndex++] = c;
-      else {
-        Serial.println(F("UART message too long; discarded"));
-        rxIndex = 0;
-        discardingLine = true;
-      }
+      continue;
     }
+
+    if (discardingLine) {
+      continue;
+    }
+
+    if (rxIndex < BUFFER_SIZE - 1) {
+      rxBuffer[rxIndex++] = incoming;
+    }
+    else {
+
+      Serial.println("[UART] Message too long. Discarding.");
+
+      rxIndex = 0;
+      discardingLine = true;
+    }
+  }
+}
+
+// =====================================================
+// SETUP
+// =====================================================
+
+void setup() {
+
+  Serial.begin(115200);
+
+  Serial.println("\n================================");
+  Serial.println(" SMART HYDROPONIC ESP32 GATEWAY");
+  Serial.println(" UART + WiFi + MQTT");
+  Serial.println("================================");
+
+  // Configure UART reception.
+  Serial2.setRxBufferSize(1024);
+
+  Serial2.begin(
+    9600,
+    SERIAL_8N1,
+    RXD2,
+    TXD2
+  );
+
+  Serial.println("[UART] Serial2 initialized at 9600 baud");
+
+  // Configure MQTT.
+  mqttClient.setServer(
+    MQTT_BROKER_HOST,
+    MQTT_BROKER_PORT
+  );
+
+  mqttClient.setKeepAlive(20);
+  mqttClient.setSocketTimeout(2);
+  mqttClient.setBufferSize(512);
+
+  // Start Wi-Fi.
+  startWiFiConnection();
+}
+
+// =====================================================
+// MAIN LOOP
+// =====================================================
+
+void loop() {
+
+  // Always prioritize reading Mega messages.
+  readMegaUART();
+
+  // Maintain network connections.
+  updateWiFi();
+  updateMQTT();
+
+  // Periodic diagnostics.
+  static unsigned long lastStats = 0;
+
+  if (millis() - lastStats >= 15000) {
+
+    lastStats = millis();
+
+    Serial.println("\n========== GATEWAY STATUS ==========");
+
+    Serial.print("WiFi: ");
+    Serial.println(
+      WiFi.status() == WL_CONNECTED ? "CONNECTED" : "DISCONNECTED"
+    );
+
+    Serial.print("MQTT: ");
+    Serial.println(
+      mqttClient.connected() ? "CONNECTED" : "DISCONNECTED"
+    );
+
+    Serial.print("Published messages: ");
+    Serial.println(mqttPublishedCount);
+
+    Serial.print("Dropped messages: ");
+    Serial.println(mqttDroppedCount);
+
+    Serial.println("====================================");
   }
 }

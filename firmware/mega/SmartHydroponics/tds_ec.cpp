@@ -31,8 +31,19 @@ void updateTDSEC() {
   float ppm = (133.42f*v25*v25*v25 - 255.86f*v25*v25 + 857.39f*v25) * 0.5f;
   tdsValue = max(0.0f, ppm * EC_CALIBRATION);
   ecValue = tdsValue / 500.0f; // approximate mS/cm; NOT independently measured EC
-  Serial.print("EC (estimated): "); Serial.print(ecValue, 3); Serial.print(" mS/cm | TDS: ");
-  Serial.print(tdsValue, 0); Serial.println(" ppm");
+ // Serial.print("EC (estimated): "); Serial.print(ecValue, 3); Serial.print(" mS/cm | TDS: ");
+ // Serial.print(tdsValue, 0); Serial.println(" ppm");
+ // Serial.print("Raw ADC: ");
+//Serial.println(sum / 20.0f);
+
+//Serial.print("TDS Voltage: ");
+//Serial.println(voltage, 3);
+
+//Serial.print("Temperature: ");
+//Serial.println(tempC, 2);
+
+//Serial.print("Compensated Voltage: ");
+//Serial.println(v25, 3);
 }
 float getEC() { return ecValue; }
 float getTDS() { return tdsValue; }

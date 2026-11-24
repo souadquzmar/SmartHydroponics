@@ -35,22 +35,21 @@ void updatePHSensor() {
   // Temporary formula - calibrate before use
   phValue = 7.0f + ((2.5f - voltage) / 0.18f);
 
-  if (!isfinite(phValue) ||
-      phValue < 0.0f ||
-      phValue > 14.0f) {
-    phValue = NAN;
-  }
 
-  Serial.print("pH Voltage: ");
-  Serial.print(voltage, 3);
 
-  Serial.print(" | pH: ");
+//Serial.print("Raw calculated pH: ");
+//Serial.println(phValue, 2);
 
-  if (isnan(phValue)) {
-    Serial.println("invalid");
-  } else {
-    Serial.println(phValue, 2);
-  }
+ // Serial.print("pH Voltage: ");
+ // Serial.print(voltage, 3);
+
+ // Serial.print(" | pH: ");
+
+ // if (isnan(phValue)) {
+  //  Serial.println("invalid");
+ // } else {
+ //   Serial.println(phValue, 2);
+ // }
 }
 
 float getPH() {

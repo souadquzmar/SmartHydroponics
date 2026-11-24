@@ -1,143 +1,93 @@
-
-#include <Arduino.h>
 #include "flow_pump.h"
 
-const byte FLOW_SENSOR_PIN = 2;
-const byte PUMP_RELAY_PIN = 5;
-
-const float CALIBRATION_FACTOR = 41.42f;
-const float MINIMUM_FLOW_LPM = 0.50f;
-
-const unsigned long SAMPLE_INTERVAL_MS = 1000UL;
-const unsigned long STARTUP_GRACE_MS = 60000UL;
-const unsigned long RESTART_DELAY_MS = 60000UL;
-
-const byte RELAY_ON = LOW;
-const byte RELAY_OFF = HIGH;
+namespace {
+constexpr byte FLOW_SENSOR_PIN = 2;
+constexpr byte PUMP_RELAY_PIN = 5;
+constexpr float CALIBRATION_FACTOR = 41.42f; // pulses per liter: calibrate for your sensor
+constexpr float MINIMUM_FLOW_LPM = 0.50f;
+constexpr unsigned long SAMPLE_INTERVAL_MS = 1000UL;
+constexpr unsigned long STARTUP_GRACE_MS = 30000UL;
+constexpr unsigned long RESTART_DELAY_MS = 60000UL;
+constexpr byte RELAY_ON = LOW;
+constexpr byte RELAY_OFF = HIGH;
 
 volatile unsigned long pulseCount = 0;
-
-unsigned long previousSampleMs = 0;
-unsigned long pumpStartMs = 0;
-unsigned long pumpStopMs = 0;
-
-float flowRateLPM = 0.0f;
-
 bool pumpRunning = false;
+bool flowConfirmed = false;
+float flowRateLPM = 0.0f;
+unsigned long pumpStartTime = 0;
+unsigned long pumpStopTime = 0;
+unsigned long lastSampleTime = 0;
 
-void countFlowPulse() {
-  pulseCount++;
-}
+void countPulse() { ++pulseCount; }
 
 void startPump() {
+  // Reset state *before* energizing the circulation pump
   noInterrupts();
   pulseCount = 0;
   interrupts();
-
-  digitalWrite(PUMP_RELAY_PIN, RELAY_ON);
-
-  pumpRunning = true;
-  pumpStartMs = millis();
-  previousSampleMs = pumpStartMs;
-
-  Serial.println("Pump ON - startup grace period");
-}
-
-void stopPump(const char* reason) {
-  digitalWrite(PUMP_RELAY_PIN, RELAY_OFF);
-
-  pumpRunning = false;
-  pumpStopMs = millis();
   flowRateLPM = 0.0f;
-
-  Serial.print("Pump OFF: ");
-  Serial.println(reason);
-  Serial.println("Retrying in 60 seconds.");
+  flowConfirmed = false;
+  pumpStartTime = millis();
+  lastSampleTime = pumpStartTime;
+  pumpRunning = true;
+  digitalWrite(PUMP_RELAY_PIN, RELAY_ON);
+  Serial.println(F("Pump ON"));
 }
+
+void stopPump(const __FlashStringHelper *reason) {
+  digitalWrite(PUMP_RELAY_PIN, RELAY_OFF);
+  pumpRunning = false;
+  flowConfirmed = false;
+  flowRateLPM = 0.0f;
+  pumpStopTime = millis();
+  Serial.print(F("Pump OFF: "));
+  Serial.println(reason);
+  Serial.println(F("Retrying in 60 seconds."));
+}
+} // namespace
 
 void initFlowPump() {
-  pinMode(PUMP_RELAY_PIN, OUTPUT);
-  digitalWrite(PUMP_RELAY_PIN, RELAY_OFF);
-
   pinMode(FLOW_SENSOR_PIN, INPUT_PULLUP);
-
-  attachInterrupt(
-    digitalPinToInterrupt(FLOW_SENSOR_PIN),
-    countFlowPulse,
-    FALLING
-  );
-
-  Serial.println("YF-S401 + Pump 1 Monitor");
+  digitalWrite(PUMP_RELAY_PIN, RELAY_OFF);
+  pinMode(PUMP_RELAY_PIN, OUTPUT);
+  attachInterrupt(digitalPinToInterrupt(FLOW_SENSOR_PIN), countPulse, FALLING);
   startPump();
 }
 
 void updateFlowPump() {
   unsigned long now = millis();
-
   if (!pumpRunning) {
-    if (now - pumpStopMs >= RESTART_DELAY_MS) {
-      startPump();
-    }
+    if (now - pumpStopTime >= RESTART_DELAY_MS) startPump();
     return;
   }
-
-  unsigned long elapsedMs = now - previousSampleMs;
-
-  if (elapsedMs < SAMPLE_INTERVAL_MS) {
-    return;
-  }
-
-  previousSampleMs = now;
-
+  if (now - lastSampleTime < SAMPLE_INTERVAL_MS) return;
+  const unsigned long elapsed = now - lastSampleTime;
+  lastSampleTime = now;
   noInterrupts();
-  unsigned long pulses = pulseCount;
+  const unsigned long pulses = pulseCount;
   pulseCount = 0;
   interrupts();
-
-  float frequencyHz =
-    pulses * 1000.0f / elapsedMs;
-
-  flowRateLPM = frequencyHz / CALIBRATION_FACTOR;
-
-  Serial.print("Pulses: ");
-  Serial.print(pulses);
-  Serial.print(" | Flow: ");
+  flowRateLPM = (pulses * 60000.0f) / (CALIBRATION_FACTOR * elapsed);
+  Serial.print(F("Flow: "));
   Serial.print(flowRateLPM, 2);
-  Serial.println(" L/min");
+  Serial.println(F(" L/min"));
 
-  if (now - pumpStartMs < STARTUP_GRACE_MS) {
-    Serial.println("Starting: waiting for flow.");
+  // A reading becomes dosing-safe only after startup grace expires.
+  flowConfirmed = (now - pumpStartTime >= STARTUP_GRACE_MS) &&
+                  (flowRateLPM >= MINIMUM_FLOW_LPM);
+  if (now - pumpStartTime < STARTUP_GRACE_MS) {
+    Serial.println(F("Startup grace period..."));
     return;
   }
-
-  if (flowRateLPM < MINIMUM_FLOW_LPM) {
-    stopPump(
-      pulses == 0
-        ? "No water flow detected"
-        : "Water flow below 0.5 L/min"
-    );
+  if (!flowConfirmed) {
+    stopPump(pulses == 0 ? F("No water flow detected")
+                         : F("Water flow below 0.5 L/min"));
   } else {
-    Serial.println("Flow normal - pump continues running.");
+    Serial.println(F("Flow normal - pump continues running."));
   }
-
-  Serial.println("--------------------------");
 }
 
-float getFlowRateLPM() {
-  return flowRateLPM;
-}
-
-bool isPumpRunning() {
-  return pumpRunning;
-}
-
-// Dosing must not start during the circulation pump's startup grace period.
-// This deliberately uses the SAME 0.50 L/min minimum as pump protection.
-bool isFlowConfirmedForDosing() {
-  const unsigned long now = millis();
-  return pumpRunning &&
-         (now - pumpStartMs >= STARTUP_GRACE_MS) &&
-         (now - previousSampleMs <= 2500UL) &&
-         isfinite(flowRateLPM) &&
-         (flowRateLPM >= MINIMUM_FLOW_LPM);
-}
+float getFlowRateLPM() { return flowRateLPM; }
+bool isPumpRunning() { return pumpRunning; }
+bool isFlowConfirmedForDosing() { return pumpRunning && flowConfirmed; }

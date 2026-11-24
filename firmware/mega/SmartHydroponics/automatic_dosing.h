@@ -4,30 +4,30 @@
 #include <math.h>
 
 // Check against the rest of your project's pins before wiring.
-constexpr uint8_t PH_UP_RELAY_PIN = 30;
-constexpr uint8_t PH_DOWN_RELAY_PIN = 31;
-constexpr uint8_t NUTRIENT_RELAY_PIN = 32;
+constexpr uint8_t PH_UP_RELAY_PIN = 12;
+constexpr uint8_t PH_DOWN_RELAY_PIN = 11;
+constexpr uint8_t NUTRIENT_RELAY_PIN = 8;
 
 // Change these ONLY if your relay board is active-HIGH.
 constexpr uint8_t DOSER_RELAY_ON = LOW;
 constexpr uint8_t DOSER_RELAY_OFF = HIGH;
 
-constexpr float DOSER_PH_LOW = 5.8f;
-constexpr float DOSER_PH_HIGH = 6.0f;
-constexpr float DOSER_TDS_LOW_PPM = 900.0f;
+constexpr float DOSER_PH_LOW = 5.5f;
+constexpr float DOSER_PH_HIGH = 6.5f;
+constexpr float DOSER_TDS_LOW_PPM = 750.0f;
 constexpr float DOSER_TDS_HIGH_PPM = 1000.0f;
 
 // At a measured 21 mL/s, 150 ms dispenses ~3.15 mL.
 // Verify that a short pulse actually makes this pump/relay dispense consistently.
 constexpr unsigned long DOSER_PULSE_MS = 150UL;
-constexpr unsigned long DOSER_MIX_MS = 60000UL;
-constexpr unsigned long DOSER_STARTUP_MIX_MS = 60000UL;
+constexpr unsigned long DOSER_MIX_MS = 30000UL;
+constexpr unsigned long DOSER_STARTUP_MIX_MS = 30000UL;
 constexpr unsigned long DOSER_STABLE_MS = 5000UL;
-constexpr uint8_t DOSER_MAX_TDS_PULSES = 5;
-constexpr uint8_t DOSER_MAX_PH_PULSES = 5;
+constexpr uint8_t DOSER_MAX_TDS_PULSES = 20;
+constexpr uint8_t DOSER_MAX_PH_PULSES = 20;
 
-constexpr float DOSER_PH_SANITY_LOW = 3.0f;
-constexpr float DOSER_PH_SANITY_HIGH = 10.0f;
+constexpr float DOSER_PH_SANITY_LOW = 0.0f;
+constexpr float DOSER_PH_SANITY_HIGH = 14.0f;
 constexpr float DOSER_TDS_SANITY_HIGH = 3000.0f;
 
 // Defined in the main sketch; must confirm circulation and measured flow.

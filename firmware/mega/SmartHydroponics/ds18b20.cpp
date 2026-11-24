@@ -43,8 +43,8 @@ void updateDS18B20() {
     return;
   }
   waterTemperatureC = temperature;
-  Serial.print("water temperature: ");
-  Serial.print(temperature, 2);
-  Serial.println(" °C");
+ // Serial.print("water temperature: ");
+ // Serial.print(temperature, 2);
+ // Serial.println(" °C");
 }
 float getWaterTemperatureC() { return waterTemperatureC; }
